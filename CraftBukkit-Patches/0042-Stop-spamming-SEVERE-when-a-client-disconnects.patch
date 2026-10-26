@@ -1,0 +1,91 @@
+From f4fc434e1dc33b0e225e352271dc8bb8648faf8a Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 23:41:16 +0500
+Subject: [PATCH] Stop spamming SEVERE when a client disconnects
+
+NetworkWriterThread caught IOException from flushing a closed socket and
+printed the stack trace unconditionally. NetworkManager.a(Exception)
+already prints it, and when the connection is already being torn down
+(NetworkManager.f() is true) there is nothing wrong at all: every normal
+disconnect produced a bogus SEVERE trace ending in
+SocketException: Socket closed.
+
+Only report the exception when the connection is not already closing.
+
+diff --git a/src/main/java/net/minecraft/server/NetworkWriterThread.java b/src/main/java/net/minecraft/server/NetworkWriterThread.java
+new file mode 100644
+index 000000000..631601ecf
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/NetworkWriterThread.java
+@@ -0,0 +1,68 @@
++package net.minecraft.server;
++
++import java.io.IOException;
++
++class NetworkWriterThread extends Thread {
++
++    final NetworkManager a;
++
++    NetworkWriterThread(NetworkManager networkmanager, String s) {
++        super(s);
++        this.a = networkmanager;
++    }
++
++    public void run() {
++        Object object = NetworkManager.a;
++
++        synchronized (NetworkManager.a) {
++            ++NetworkManager.c;
++        }
++
++        while (true) {
++            boolean flag = false;
++
++            try {
++                flag = true;
++                if (!NetworkManager.a(this.a)) {
++                    flag = false;
++                    break;
++                }
++
++                while (NetworkManager.d(this.a)) {
++                    ;
++                }
++
++                try {
++                    sleep(100L);
++                } catch (InterruptedException interruptedexception) {
++                    ;
++                }
++
++                try {
++                    if (NetworkManager.e(this.a) != null) {
++                        NetworkManager.e(this.a).flush();
++                    }
++                } catch (IOException ioexception) {
++                    if (!NetworkManager.f(this.a)) {
++                        // Canyon - this already prints the stack trace; printing
++                        // it again here spammed SEVERE on every normal disconnect.
++                        NetworkManager.a(this.a, (Exception) ioexception);
++                    }
++                }
++            } finally {
++                if (flag) {
++                    Object object1 = NetworkManager.a;
++
++                    synchronized (NetworkManager.a) {
++                        --NetworkManager.c;
++                    }
++                }
++            }
++        }
++
++        object = NetworkManager.a;
++        synchronized (NetworkManager.a) {
++            --NetworkManager.c;
++        }
++    }
++}
+-- 
+2.47.3
+
