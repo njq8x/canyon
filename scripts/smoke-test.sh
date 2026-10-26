@@ -53,6 +53,17 @@ javac -nowarn -source 8 -target 8 -cp "${API_JAR}" -d "${WORK}/classes" \
 jar cf "${WORK}/plugins/smoke.jar" -C "${WORK}/classes" . -C "${WORK}/src" plugin.yml \
     || fail "could not package the smoke-test plugin"
 
+# --- verify the shaded jar ships usable JDBC drivers ------------------------
+mkdir -p "${WORK}/driverclasses"
+javac -nowarn -source 8 -target 8 -d "${WORK}/driverclasses" \
+    "${ROOT}/scripts/smoke/DriverCheck.java" || fail "could not compile the JDBC driver check"
+
+if ! java -cp "${JAR}:${WORK}/driverclasses" DriverCheck > "${WORK}/driver.log" 2>&1; then
+    cat "${WORK}/driver.log"
+    fail "the bundled JDBC drivers are not usable"
+fi
+grep -q "DRIVER CHECK PASSED" "${WORK}/driver.log" || fail "the JDBC driver check did not pass"
+
 # --- boot the server without a tty, exactly like a service manager would ----
 cd "${WORK}"
 cp "${JAR}" server.jar
