@@ -1,4 +1,4 @@
-# Canyon [![Build](https://github.com/njq8x/canyon/actions/workflows/build.yml/badge.svg)](https://github.com/njq8x/canyon/actions/workflows/build.yml) [![Discord](https://img.shields.io/discord/627985817020923937)](https://discord.gg/hj5m5z3) [![forthebadge](https://forthebadge.com/images/badges/contains-technical-debt.svg)](https://forthebadge.com)
+# Canyon [![Build](https://github.com/njq8x/canyon/actions/workflows/build.yml/badge.svg)](https://github.com/njq8x/canyon/actions/workflows/build.yml) [![Soak](https://github.com/njq8x/canyon/actions/workflows/soak.yml/badge.svg)](https://github.com/njq8x/canyon/actions/workflows/soak.yml) [![Discord](https://img.shields.io/discord/627985817020923937)](https://discord.gg/hj5m5z3) [![forthebadge](https://forthebadge.com/images/badges/contains-technical-debt.svg)](https://forthebadge.com)
 
 Canyon is a fork of CraftBukkit for Minecraft Beta 1.7.3. It includes multiple
 enhancements whilst also retaining compatibility with old Bukkit plugins and
@@ -33,7 +33,31 @@ Tagged builds are published as GitHub releases:
 
 CI builds every push and pull request, and runs an integration smoke test that
 boots the server, logs in a protocol-level client, streams chunks, saves, and
-shuts down headlessly.
+shuts down headlessly. A connection soak test runs on every build as well, and
+a longer one weekly (see [Testing](#testing)).
+
+## Testing
+
+All test scripts build their own disposable server in a temporary directory and
+shut it down afterwards, so they never touch an existing world. Pass the server
+and API jars built by Maven:
+
+```bash
+./scripts/smoke-test.sh Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
+./scripts/soak.sh       Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
+./scripts/benchmark.sh  Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
+```
+
+* `smoke-test.sh` — one login, chunk download, save and clean shutdown.
+* `soak.sh` — repeated parallel logins with idling and clean disconnects; fails
+  on leaked sockets or threads, timed out connections, errors in the log, or a
+  server that stops answering. Set `SOAK_NETTY=1` to exercise the Netty stack,
+  and see the header of the script for the bot/cycle/idle knobs.
+* `benchmark.sh` — reproducible load benchmark (idle ticks, chunk generation,
+  chunk churn, entities). Run it manually or via the weekly Benchmark workflow;
+  absolute numbers depend on the machine.
+
+The protocol bot used by the smoke and soak tests lives in `scripts/bot`.
 
 ## Differences from CraftBukkit
 
