@@ -1,0 +1,57 @@
+From ed2d629c1b02b59a66c694cd34af3519347213fd Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:45:07 +0500
+Subject: [PATCH] Update Netty to 4.1.121.Final
+
+4.1.49 is from 2020 and pulls in an older native epoll/kqueue build.
+The 4.1.x line is API compatible; the unused io.netty.util.Recycler
+import is dropped because Recycler is internal API.
+
+Verified with settings.use-new-networking-stack enabled: the server
+binds an epoll channel, accepts a TCP connection and stops cleanly.
+
+diff --git a/pom.xml b/pom.xml
+index db0b6288c..15ab92d69 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -91,14 +91,14 @@
+     <dependency>
+       <groupId>io.netty</groupId>
+       <artifactId>netty-handler</artifactId>
+-      <version>4.1.49.Final</version>
++      <version>4.1.121.Final</version>
+       <type>jar</type>
+       <scope>compile</scope>
+     </dependency>
+     <dependency>
+       <groupId>io.netty</groupId>
+       <artifactId>netty-transport-native-epoll</artifactId>
+-      <version>4.1.49.Final</version>
++      <version>4.1.121.Final</version>
+       <type>jar</type>
+       <scope>compile</scope>
+       <classifier>linux-x86_64</classifier>
+@@ -106,7 +106,7 @@
+     <dependency>
+       <groupId>io.netty</groupId>
+       <artifactId>netty-transport-native-kqueue</artifactId>
+-      <version>4.1.49.Final</version>
++      <version>4.1.121.Final</version>
+       <type>jar</type>
+       <scope>compile</scope>
+       <classifier>osx-x86_64</classifier>
+diff --git a/src/main/java/com/canyonmodded/network/PacketEncoder.java b/src/main/java/com/canyonmodded/network/PacketEncoder.java
+index 5317f40dd..3adccd533 100644
+--- a/src/main/java/com/canyonmodded/network/PacketEncoder.java
++++ b/src/main/java/com/canyonmodded/network/PacketEncoder.java
+@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBuf;
+ import io.netty.buffer.ByteBufOutputStream;
+ import io.netty.channel.ChannelHandlerContext;
+ import io.netty.handler.codec.MessageToByteEncoder;
+-import io.netty.util.Recycler;
+ import net.minecraft.server.Packet;
+ import net.minecraft.server.Packet51MapChunk;
+ 
+-- 
+2.47.3
+

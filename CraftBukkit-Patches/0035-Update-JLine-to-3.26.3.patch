@@ -1,0 +1,34 @@
+From beae5d89fa3da211928239b8eff7aee1d0a9b2af Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:41:56 +0500
+Subject: [PATCH] Update JLine to 3.26.3
+
+3.14 is from 2019. The terminal, reader and jansi APIs Canyon uses
+(TerminalBuilder#dumb, LineReaderBuilder#terminal, DumbTerminal) are
+unchanged, and the smoke test exercises both the dumb-terminal and
+--nojline paths.
+
+diff --git a/pom.xml b/pom.xml
+index 6cb465bc4..db0b6288c 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -63,14 +63,14 @@
+     <dependency>
+       <groupId>org.jline</groupId>
+       <artifactId>jline</artifactId>
+-      <version>3.14.0</version>
++      <version>3.26.3</version>
+       <type>jar</type>
+       <scope>compile</scope>
+     </dependency>
+     <dependency>
+       <groupId>org.jline</groupId>
+       <artifactId>jline-terminal-jansi</artifactId>
+-      <version>3.14.0</version>
++      <version>3.26.3</version>
+       <type>jar</type>
+       <scope>compile</scope>
+     </dependency>
+-- 
+2.47.3
+

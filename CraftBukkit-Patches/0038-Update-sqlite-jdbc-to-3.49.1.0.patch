@@ -1,0 +1,28 @@
+From ef35c8b7ec9db609352fded525dd29af8d69544d Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:50:13 +0500
+Subject: [PATCH] Update sqlite-jdbc to 3.49.1.0
+
+3.7.2 is from 2012 and carries known SQLite vulnerabilities. The driver
+class (org.sqlite.JDBC) and the JDBC API used by Canyon are unchanged,
+and 3.49.1.0 still targets Java 8.
+
+The newer artifact bundles native libraries for every platform, so the
+shaded jar grows by roughly 11 MB.
+
+diff --git a/pom.xml b/pom.xml
+index fdac163f1..5eb100ed0 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -77,7 +77,7 @@
+     <dependency>
+       <groupId>org.xerial</groupId>
+       <artifactId>sqlite-jdbc</artifactId>
+-      <version>3.7.2</version>
++      <version>3.49.1.0</version>
+       <type>jar</type>
+       <scope>compile</scope>
+     </dependency>
+-- 
+2.47.3
+

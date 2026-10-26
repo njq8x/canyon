@@ -1,0 +1,24 @@
+From 2e3dcb10069d225278f4b493ca7163ece06043f2 Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:48:08 +0500
+Subject: [PATCH] Update fastutil to 8.5.16
+
+Only Long2LongOpenHashMap and LongIterator are used, both unchanged
+since 8.3.1. The smoke test exercises chunk unloading bookkeeping.
+
+diff --git a/pom.xml b/pom.xml
+index 15ab92d69..fdac163f1 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -115,7 +115,7 @@
+     <dependency>
+       <groupId>it.unimi.dsi</groupId>
+       <artifactId>fastutil</artifactId>
+-      <version>8.3.1</version>
++      <version>8.5.16</version>
+       <scope>compile</scope>
+     </dependency>
+   </dependencies>
+-- 
+2.47.3
+
