@@ -1,0 +1,109 @@
+From b8a0e13c2c361fe8f1c3096b6e20f0603b22df28 Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:02:29 +0500
+Subject: [PATCH] Combine nearby dropped item entities
+
+Dropped items never merged, so a farm or a blown-up chest could leave
+hundreds of single-item entities ticking and syncing.
+
+Items of the same type and damage now merge once they are 20 ticks old,
+within a configurable radius (optimization.item-merging,
+optimization.item-merge-radius), capped at the item's max stack size.
+Merging preserves the longer pickup delay of the two stacks.
+
+diff --git a/src/main/java/com/canyonmodded/config/CanyonConfig.java b/src/main/java/com/canyonmodded/config/CanyonConfig.java
+index de27ef58f..32d183d8e 100644
+--- a/src/main/java/com/canyonmodded/config/CanyonConfig.java
++++ b/src/main/java/com/canyonmodded/config/CanyonConfig.java
+@@ -12,6 +12,8 @@ public class CanyonConfig {
+     public static boolean asyncChunkLoading = false;
+     public static int arrowDespawnRate = 1200;
+     public static int itemDespawnRate = 6000;
++    public static boolean itemMerging = true;
++    public static double itemMergeRadius = 0.5D;
+     public static boolean randomizeInitialSpawn = true;
+     public static int unloadInactiveChunksAfter = 0;
+ 
+@@ -26,6 +28,8 @@ public class CanyonConfig {
+         asyncChunkLoading = configuration.getBoolean("settings.async-chunk-loading", false);
+         arrowDespawnRate = configuration.getInt("optimization.arrow-despawn-rate", arrowDespawnRate);
+         itemDespawnRate = configuration.getInt("optimization.item-despawn-rate", itemDespawnRate);
++        itemMerging = configuration.getBoolean("optimization.item-merging", itemMerging);
++        itemMergeRadius = configuration.getDouble("optimization.item-merge-radius", itemMergeRadius);
+         randomizeInitialSpawn = configuration.getBoolean("settings.randomize-initial-spawn", true);
+         unloadInactiveChunksAfter = configuration.getInt("optimization.unload-inactive-chunks-after", unloadInactiveChunksAfter);
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityItem.java b/src/main/java/net/minecraft/server/EntityItem.java
+index d944acecf..0388ca843 100644
+--- a/src/main/java/net/minecraft/server/EntityItem.java
++++ b/src/main/java/net/minecraft/server/EntityItem.java
+@@ -2,6 +2,8 @@ package net.minecraft.server;
+ 
+ import org.bukkit.event.player.PlayerPickupItemEvent; // CraftBukkit
+ 
++import java.util.List; // Canyon - item merging
++
+ public class EntityItem extends Entity {
+ 
+     public ItemStack itemStack;
+@@ -84,8 +86,57 @@ public class EntityItem extends Entity {
+         ++this.b;
+         if (this.b >= com.canyonmodded.config.CanyonConfig.itemDespawnRate) {  // Canyon - custom item despawn rate
+             this.die();
++            return; // Canyon - do not merge a despawned item
++        }
++
++        // Canyon start - combine nearby dropped items (issue #4)
++        if (com.canyonmodded.config.CanyonConfig.itemMerging && !this.world.isStatic && this.b >= 20) {
++            this.combineWithNearbyItems();
++        }
++        // Canyon end
++    }
++
++    // Canyon start - combine nearby dropped items (issue #4)
++    private void combineWithNearbyItems() {
++        int maxStackSize = this.itemStack.getMaxStackSize();
++
++        if (this.itemStack.count >= maxStackSize) {
++            return;
++        }
++
++        double radius = com.canyonmodded.config.CanyonConfig.itemMergeRadius;
++        List nearby = this.world.a(EntityItem.class, this.boundingBox.b(radius, radius, radius));
++
++        for (int i = 0; i < nearby.size(); ++i) {
++            EntityItem other = (EntityItem) nearby.get(i);
++
++            if (other == this || other.dead || other.itemStack == null) {
++                continue;
++            }
++
++            if (other.itemStack.id != this.itemStack.id || other.itemStack.damage != this.itemStack.damage) {
++                continue;
++            }
++
++            int moved = Math.min(maxStackSize - this.itemStack.count, other.itemStack.count);
++            if (moved <= 0) {
++                break;
++            }
++
++            this.itemStack.count += moved;
++            other.itemStack.count -= moved;
++            this.pickupDelay = Math.max(this.pickupDelay, other.pickupDelay);
++
++            if (other.itemStack.count <= 0) {
++                other.die();
++            }
++
++            if (this.itemStack.count >= maxStackSize) {
++                break;
++            }
+         }
+     }
++    // Canyon end
+ 
+     public boolean f_() {
+         return this.world.a(this.boundingBox, Material.WATER, this);
+-- 
+2.47.3
+
