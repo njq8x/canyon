@@ -31,8 +31,12 @@ trap cleanup EXIT
 
 fail() {
     echo "BENCHMARK FAILED: $*"
-    echo "----- server.log (tail) -----"
-    tail -60 "${WORK}/server.log" 2>/dev/null || true
+    if [ -f "${WORK}/server.log" ]; then
+        echo "----- server.log (first SEVERE) -----"
+        grep -m1 -A25 "SEVERE" "${WORK}/server.log" || true
+        echo "----- server.log (tail) -----"
+        tail -40 "${WORK}/server.log"
+    fi
     echo "----- console.log (tail) -----"
     tail -40 "${WORK}/console.log" 2>/dev/null || true
     exit 1

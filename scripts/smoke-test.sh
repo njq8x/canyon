@@ -37,8 +37,14 @@ trap cleanup EXIT
 
 fail() {
     echo "SMOKE TEST FAILED: $*"
-    echo "----- server.log (tail) -----"
-    tail -60 "${WORK}/server.log" 2>/dev/null || true
+    if [ -f "${WORK}/server.log" ]; then
+        # The first SEVERE is usually the actual cause; the tail alone is
+        # useless for a stack trace because it shows only the deepest frames.
+        echo "----- server.log (first SEVERE) -----"
+        grep -m1 -A25 "SEVERE" "${WORK}/server.log" || true
+        echo "----- server.log (tail) -----"
+        tail -40 "${WORK}/server.log"
+    fi
     echo "----- console.log (tail) -----"
     tail -40 "${WORK}/console.log" 2>/dev/null || true
     exit 1
@@ -76,7 +82,10 @@ javac -nowarn -source 8 -target 8 -cp "${JAR}" -d "${WORK}/botclasses" \
 # --- boot the server without a tty, exactly like a service manager would ----
 cd "${WORK}"
 cp "${JAR}" server.jar
-printf 'server-port=%s\nonline-mode=false\n' "${PORT}" > smoke.properties
+# Fixed seed: generate the same world every run so failures are reproducible.
+# A random seed occasionally triggers a very deep BlockFlowing recursion
+# during liquid generation, which leaves the server stuck before "Done (".
+printf 'server-port=%s\nonline-mode=false\nlevel-seed=424242\n' "${PORT}" > smoke.properties
 if [ "${NETTY}" = "1" ]; then
     printf 'settings:\n  use-new-networking-stack: true\n' > canyon.yml
 fi
