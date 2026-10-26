@@ -1,4 +1,4 @@
-# Canyon [![Jenkins](https://img.shields.io/jenkins/build/https/ci.velocitypowered.com/job/Canyon)](https://canyonmodded.p0rtal.gay/job/Canyonmodded/) [![Discord](https://img.shields.io/discord/627985817020923937)](https://discord.gg/hj5m5z3) [![forthebadge](https://forthebadge.com/images/badges/contains-technical-debt.svg)](https://forthebadge.com)
+# Canyon [![Build](https://github.com/njq8x/canyon/actions/workflows/build.yml/badge.svg)](https://github.com/njq8x/canyon/actions/workflows/build.yml) [![Discord](https://img.shields.io/discord/627985817020923937)](https://discord.gg/hj5m5z3) [![forthebadge](https://forthebadge.com/images/badges/contains-technical-debt.svg)](https://forthebadge.com)
 
 Canyon is a fork of CraftBukkit for Minecraft Beta 1.7.3. It includes multiple
 enhancements whilst also retaining compatibility with old Bukkit plugins and
@@ -6,17 +6,33 @@ mods as much as possible.
 
 ## Building
 
-1. Clone the repo with `git clone --recursive https://github.com/canyonmodded/canyon.git`.
-2. Go into the new `canyon` directory and run `./canyon p`.
-3. Run `mvn clean package`.
-4. Find the server JAR in `Canyon-Server/target`.
+Requirements: JDK 8 and Maven 3.6+. The build applies the patch sets in
+`Bukkit-Patches` and `CraftBukkit-Patches` using `git am`, so git needs a
+configured identity first:
 
-OR!
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+```
+
+1. Clone the repo with `git clone --recursive https://github.com/njq8x/canyon.git`.
+2. Go into the new `canyon` directory and run `./canyon p` to apply the patches.
+3. Run `mvn clean package`.
+4. Find the server JAR in `Canyon-Server/target/canyon-server.jar` and the API
+   JAR in `Canyon-API/target/canyon-api.jar`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the patch workflow, which is how all
+changes to Canyon are made.
 
 ## Downloading
 
-You can download them [Here.](https://canyonmodded.p0rtal.gay/job/Canyonmodded/)
-Or check our discord when jenkins fails to login and properly build.
+Tagged builds are published as GitHub releases:
+
+* [Releases](https://github.com/njq8x/canyon/releases) — server jar, API jar and checksums
+* Every push to `master` also uploads the server jar as a workflow artifact
+
+CI builds every push and pull request, and runs an integration smoke test that
+boots the server, saves, and shuts down headlessly.
 
 ## Differences from CraftBukkit
 
