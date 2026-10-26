@@ -1,0 +1,3 @@
+name: BenchPlugin
+main: bench.BenchPlugin
+version: 1.0

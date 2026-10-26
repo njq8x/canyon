@@ -39,6 +39,8 @@ fail() {
     echo "SMOKE TEST FAILED: $*"
     echo "----- server.log (tail) -----"
     tail -60 "${WORK}/server.log" 2>/dev/null || true
+    echo "----- console.log (tail) -----"
+    tail -40 "${WORK}/console.log" 2>/dev/null || true
     exit 1
 }
 
@@ -74,7 +76,7 @@ fi
 mkfifo console.in
 exec 3<> console.in
 
-java -Xms512M -Xmx1G -jar server.jar -c smoke.properties < console.in > server.log 2>&1 &
+java -Xms512M -Xmx1G -jar server.jar -c smoke.properties < console.in > console.log 2>&1 &
 PID=$!
 
 wait_for() {
