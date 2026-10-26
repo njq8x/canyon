@@ -67,14 +67,14 @@ grep -q "DRIVER CHECK PASSED" "${WORK}/driver.log" || fail "the JDBC driver chec
 # --- boot the server without a tty, exactly like a service manager would ----
 cd "${WORK}"
 cp "${JAR}" server.jar
-printf 'server-port=%s\nonline-mode=false\n' "${PORT}" > server.properties
+printf 'server-port=%s\nonline-mode=false\n' "${PORT}" > smoke.properties
 if [ "${NETTY}" = "1" ]; then
     printf 'settings:\n  use-new-networking-stack: true\n' > canyon.yml
 fi
 mkfifo console.in
 exec 3<> console.in
 
-java -Xms512M -Xmx1G -jar server.jar < console.in > server.log 2>&1 &
+java -Xms512M -Xmx1G -jar server.jar -c smoke.properties < console.in > server.log 2>&1 &
 PID=$!
 
 wait_for() {
@@ -97,6 +97,10 @@ wait_for() {
 
 wait_for "Done (" 180
 wait_for "SMOKE result PASS" 120
+
+# -c must select the properties file, not be shadowed by another option
+grep -q "Starting Minecraft server on .*:${PORT}" server.log \
+    || fail "-c did not select the requested properties file"
 
 if [ "${NETTY}" = "1" ]; then
     wait_for "Using .* channel type" 30

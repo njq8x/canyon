@@ -1,0 +1,30 @@
+From 1440b701acca1056150168d3b054f9f758c6b5ee Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 23:06:12 +0500
+Subject: [PATCH] Stop canyon-settings from stealing -c
+
+The option parser registered "c" twice: once for --config and again for
+--canyon-settings. jopt-simple keeps the last registration, so -c pointed
+at canyon.yml and the server silently ignored -c custom.properties.
+
+Register --canyon-settings with its long name only. -c and --config work
+as documented again, and canyon.yml still defaults correctly.
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
+index 394c6a97c..8b71df851 100644
+--- a/src/main/java/org/bukkit/craftbukkit/Main.java
++++ b/src/main/java/org/bukkit/craftbukkit/Main.java
+@@ -93,7 +93,9 @@ public class Main {
+                         .describedAs("Yml file");
+ 
+                 // Canyon Start
+-                acceptsAll(asList("c", "canyon-settings"), "File for Canyon settings")
++                // No short option: "c" already belongs to --config above, and
++                // registering it twice silently redirected -c to canyon.yml.
++                acceptsAll(asList("canyon-settings"), "File for Canyon settings")
+                         .withRequiredArg()
+                         .ofType(File.class)
+                         .defaultsTo(new File("canyon.yml"))
+-- 
+2.47.3
+
