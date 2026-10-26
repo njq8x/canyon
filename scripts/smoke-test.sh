@@ -9,10 +9,18 @@
 # up at compile time.
 #
 # Usage: scripts/smoke-test.sh <server-jar> <api-jar>
+#
+# Environment:
+#   SMOKE_NETTY=1  run with settings.use-new-networking-stack enabled and
+#                  probe the listener over TCP (default: legacy networking)
+#   SMOKE_PORT     port to bind (default: 25599)
 set -euo pipefail
 
 JAR=$(realpath "${1:?usage: smoke-test.sh <server-jar> <api-jar>}")
 API_JAR=$(realpath "${2:?usage: smoke-test.sh <server-jar> <api-jar>}")
+
+NETTY=${SMOKE_NETTY:-0}
+PORT=${SMOKE_PORT:-25599}
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK=$(mktemp -d)
@@ -48,6 +56,10 @@ jar cf "${WORK}/plugins/smoke.jar" -C "${WORK}/classes" . -C "${WORK}/src" plugi
 # --- boot the server without a tty, exactly like a service manager would ----
 cd "${WORK}"
 cp "${JAR}" server.jar
+printf 'server-port=%s\nonline-mode=false\n' "${PORT}" > server.properties
+if [ "${NETTY}" = "1" ]; then
+    printf 'settings:\n  use-new-networking-stack: true\n' > canyon.yml
+fi
 mkfifo console.in
 exec 3<> console.in
 
@@ -74,6 +86,13 @@ wait_for() {
 
 wait_for "Done (" 180
 wait_for "SMOKE result PASS" 120
+
+if [ "${NETTY}" = "1" ]; then
+    wait_for "Using .* channel type" 30
+    if ! timeout 5 bash -c "exec 3<>/dev/tcp/127.0.0.1/${PORT}"; then
+        fail "the Netty listener did not accept a TCP connection"
+    fi
+fi
 
 echo "save-all" >&3
 wait_for "SMOKE WorldSaveEvent world=" 60
