@@ -1,0 +1,160 @@
+From 6f8a286d9a815134379ceacb893d257b70083843 Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:11:51 +0500
+Subject: [PATCH] Survive a console without a usable terminal
+
+Servers started without a pty (systemd, containers, piped stdin) hit an
+uncaught JLine EndOfFileException, which printed a SEVERE stack trace and
+killed the command reader thread. JLine also logged a terminal-probing
+warning and printed a '>' prompt into redirected output.
+
+- catch EndOfFileException and stop reading quietly
+- treat UserInterruptException as a request to stop the server
+- fall back to a plain stdin reader if the JLine reader cannot be built
+- build a dumb terminal when System.console() is null, and only prompt
+  when a real console exists
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 2680758e7..f9515c7ab 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -128,14 +128,22 @@ public class MinecraftServer implements Runnable, ICommandListener {
+ 
+         // CraftBukkit start
+         this.options = options;
+-        // Canyon Start
+-        //try {
++        // Canyon Start - degrade gracefully when there is no usable terminal
++        try {
++            org.jline.terminal.Terminal terminal = org.jline.terminal.TerminalBuilder.builder()
++                    .dumb(System.console() == null) // Canyon - no tty: skip terminal probing and its warning
++                    .build();
+             this.reader = org.jline.reader.LineReaderBuilder.builder()
+                     .appName("Canyon")
++                    .terminal(terminal)
+                     .build();
+-        //} catch (IOException ex) {
+-        //    Logger.getLogger(MinecraftServer.class.getName()).log(Level.SEVERE, null, ex);
+-        //}
++        } catch (Throwable ex) {
++            this.reader = null;
++            org.bukkit.craftbukkit.Main.useJline = false;
++            Logger.getLogger(MinecraftServer.class.getName()).log(Level.WARNING,
++                    "Failed to initialize the JLine console, falling back to the plain console", ex);
++        }
++        // Canyon end
+         Runtime.getRuntime().addShutdownHook(new ServerShutdownThread(this));
+         // CraftBukkit end
+     }
+diff --git a/src/main/java/net/minecraft/server/ThreadCommandReader.java b/src/main/java/net/minecraft/server/ThreadCommandReader.java
+index d2deab00a..da80d464e 100644
+--- a/src/main/java/net/minecraft/server/ThreadCommandReader.java
++++ b/src/main/java/net/minecraft/server/ThreadCommandReader.java
+@@ -13,25 +13,68 @@ public class ThreadCommandReader extends Thread {
+     }
+ 
+     public void run() {
++        // Canyon start - plain console fallback when JLine is unavailable
++        if (this.server.reader == null) {
++            this.runPlain();
++            return;
++        }
++        // Canyon end
++
+         org.jline.reader.LineReader bufferedreader = this.server.reader; // CraftBukkit // Canyon
+         String s = null;
+ 
+-        //try {
+-            // CraftBukkit start - JLine disabling compatibility
+-            while (!this.server.isStopped && MinecraftServer.isRunning(this.server)) {
+-                if (org.bukkit.craftbukkit.Main.useJline) {
++        // CraftBukkit start - JLine disabling compatibility
++        while (!this.server.isStopped && MinecraftServer.isRunning(this.server)) {
++            try {
++                if (org.bukkit.craftbukkit.Main.useJline && System.console() != null) { // Canyon - only prompt on a real terminal
+                     s = bufferedreader.readLine(">", null);
+                 } else {
+                     s = bufferedreader.readLine();
+                 }
+-                if (s != null) {
++            } catch (org.jline.reader.EndOfFileException ex) {
++                // Canyon start - stdin closed (piped, daemonized or no tty): stop reading quietly
++                MinecraftServer.log.info("Console input closed, no longer reading commands");
++                return;
++                // Canyon end
++            } catch (org.jline.reader.UserInterruptException ex) {
++                // Canyon start - Ctrl+C on the console requests a clean shutdown
++                this.server.issueCommand("stop", this.server);
++                continue;
++                // Canyon end
++            } catch (Exception ex) {
++                // Canyon start - never kill the reader thread with an uncaught exception
++                MinecraftServer.log.log(java.util.logging.Level.WARNING, "Console reader failed, no longer reading commands", ex);
++                return;
++                // Canyon end
++            }
++
++            if (s != null) {
++                this.server.issueCommand(s, this.server);
++            }
++        }
++        // CraftBukkit end
++    }
++
++    // Canyon start - plain console fallback when JLine is unavailable
++    private void runPlain() {
++        BufferedReader console = new BufferedReader(new InputStreamReader(System.in));
++
++        try {
++            while (!this.server.isStopped && MinecraftServer.isRunning(this.server)) {
++                String s = console.readLine();
++
++                if (s == null) {
++                    MinecraftServer.log.info("Console input closed, no longer reading commands");
++                    return;
++                }
++
++                if (!s.trim().isEmpty()) {
+                     this.server.issueCommand(s, this.server);
+                 }
+-                // CraftBukkit end
+             }
+-        //} catch (IOException ioexception) {
+-            // CraftBukkit
+-        //    java.util.logging.Logger.getLogger(ThreadCommandReader.class.getName()).log(java.util.logging.Level.SEVERE, null, ioexception);
+-        //}
++        } catch (IOException ex) {
++            MinecraftServer.log.log(java.util.logging.Level.WARNING, "Console reader failed, no longer reading commands", ex);
++        }
+     }
++    // Canyon end
+ }
+diff --git a/src/main/java/org/bukkit/craftbukkit/command/ColouredConsoleSender.java b/src/main/java/org/bukkit/craftbukkit/command/ColouredConsoleSender.java
+index 2abb2c0b4..0f6448201 100644
+--- a/src/main/java/org/bukkit/craftbukkit/command/ColouredConsoleSender.java
++++ b/src/main/java/org/bukkit/craftbukkit/command/ColouredConsoleSender.java
+@@ -27,7 +27,7 @@ public class ColouredConsoleSender extends ConsoleCommandSender {
+     public ColouredConsoleSender(CraftServer server) {
+         super(server);
+         this.reader = server.getReader();
+-        this.terminal = reader.getTerminal();
++        this.terminal = this.reader == null ? null : this.reader.getTerminal(); // Canyon - guard against a missing JLine console
+ 
+         // Canyon start - use extracted JLine 0.9.x function
+         replacements.put(ChatColor.BLACK, attrib(0));
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/TerminalConsoleHandler.java b/src/main/java/org/bukkit/craftbukkit/util/TerminalConsoleHandler.java
+index 7b7ae23ec..1031c8da3 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/TerminalConsoleHandler.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/TerminalConsoleHandler.java
+@@ -14,7 +14,7 @@ public class TerminalConsoleHandler extends ConsoleHandler {
+ 
+     public TerminalConsoleHandler(org.jline.reader.LineReader reader) {
+         super();
+-        if (Main.useJline) {
++        if (Main.useJline && reader != null) { // Canyon - guard against a missing JLine console
+             this.setOutputStream(new JLineOutputStream());
+         }
+         this.reader = reader;
+-- 
+2.47.3
+

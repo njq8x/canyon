@@ -1,0 +1,54 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build server jar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          # Full history is required: the scriptus plugin derives the build
+          # version from `git describe`, which fails on a shallow clone.
+          fetch-depth: 0
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Configure git identity
+        # ./canyon p applies patches with `git am`, which refuses to commit
+        # without a configured identity.
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Apply patches
+        run: ./canyon p
+
+      - name: Build
+        run: mvn -B clean package
+
+      - name: Upload server jar
+        uses: actions/upload-artifact@v7
+        with:
+          name: canyon-server
+          path: Canyon-Server/target/canyon-server.jar
+          if-no-files-found: error
+          retention-days: 30

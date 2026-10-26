@@ -1,0 +1,36 @@
+From 769a853a30c5fdc6a87c6e3ed00652b9a891d5d4 Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:02:29 +0500
+Subject: [PATCH] Fire WorldSaveEvent on explicit world saves
+
+World#save() (and therefore /save-all) saved the level without firing
+WorldSaveEvent, so plugins only saw the event during shutdown autosaves.
+Fire it after the save completes; shutdown saves go through
+MinecraftServer.saveChunks() and are unaffected.
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index b9e8290b4..130bd22c5 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+@@ -19,6 +19,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
+ import org.bukkit.event.weather.WeatherChangeEvent;
+ import org.bukkit.event.weather.ThunderChangeEvent;
+ import org.bukkit.event.world.SpawnChangeEvent;
++import org.bukkit.event.world.WorldSaveEvent;
+ import org.bukkit.block.Block;
+ import org.bukkit.entity.Boat;
+ import org.bukkit.Chunk;
+@@ -577,6 +578,10 @@ public class CraftWorld implements World {
+         world.save(true, null);
+ 
+         world.canSave = oldSave;
++
++        // Canyon start - fire WorldSaveEvent for explicit saves (/save-all, World#save)
++        server.getPluginManager().callEvent(new WorldSaveEvent(this));
++        // Canyon end
+     }
+ 
+     public boolean isAutoSave() {
+-- 
+2.47.3
+
