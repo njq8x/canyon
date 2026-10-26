@@ -40,14 +40,16 @@ throttles to a few per tick, so packet counts are not comparable between stacks.
 ```
 BOT login entity_id=599 dimension=0
 BOT spawn x=-122 y=64 z=-60
-BOT chunks=90 unique_chunks=86 keepalives=0 spawn=true
+BOT chunks=90 unique_chunks=86 keepalives=0 spawn=true reason=idle
 BOT timing login_ms=260.5 chunks_ms=296.0 total_ms=1325.1
 BOT PASSED
 ```
 
 `login_ms` is handshake-to-login, `chunks_ms` handshake-to-last-wanted-chunk and
-`total_ms` the whole session. On failure the bot prints `BOT FAILED: ...` and
-exits non-zero; a kick exits with status 2.
+`total_ms` the whole session. `reason` says why the bot stopped reading: `idle`
+(the requested idle time elapsed), `closed` (the server closed the connection)
+or `deadline` (the overall timeout expired). On failure the bot prints
+`BOT FAILED: ...` and exits non-zero; a kick exits with status 2.
 
 ## Keepalives
 

@@ -69,8 +69,14 @@ fail() {
     fi
     echo "----- console.log (tail) -----"
     tail -40 "${WORK}/console.log" 2>/dev/null || true
-    echo "----- bot logs -----"
-    grep -h "BOT " "${WORK}"/bot-*.log 2>/dev/null | tail -20 || true
+    echo "----- failed bot logs -----"
+    for log in "${WORK}"/bot-*.log; do
+        [ -f "${log}" ] || continue
+        if ! grep -q "BOT PASSED" "${log}"; then
+            echo "--- $(basename "${log}") ---"
+            cat "${log}"
+        fi
+    done
     exit 1
 }
 
