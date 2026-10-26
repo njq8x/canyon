@@ -14,11 +14,11 @@ concurrency:
 jobs:
   build:
     name: Build server jar
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout (with submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
           # Full history is required: the scriptus plugin derives the build
@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 8
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '8'
@@ -46,7 +46,7 @@ jobs:
         run: mvn -B clean package
 
       - name: Upload server jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: canyon-server
           path: Canyon-Server/target/canyon-server.jar
