@@ -54,6 +54,20 @@ jobs:
           SMOKE_PORT: '25599'
         run: ./scripts/smoke-test.sh Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
 
+      - name: Soak test (legacy networking)
+        env:
+          SOAK_IDLE_MS: '500'
+          SOAK_OUTPUT: soak-legacy.txt
+        run: ./scripts/soak.sh Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar 2 2 10
+
+      - name: Soak test (Netty networking)
+        env:
+          SOAK_NETTY: '1'
+          SOAK_PORT: '25598'
+          SOAK_IDLE_MS: '500'
+          SOAK_OUTPUT: soak-netty.txt
+        run: ./scripts/soak.sh Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar 2 2 10
+
       - name: Upload server jar
         uses: actions/upload-artifact@v7
         with:

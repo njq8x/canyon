@@ -4,6 +4,8 @@ Canyon-API
 Canyon-Server
 Canyon-MinFastUtil/target
 run/
+benchmark*.txt
+soak*.txt
 
 # Compiled class file
 *.class
