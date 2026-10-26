@@ -66,6 +66,13 @@ if ! java -cp "${JAR}:${WORK}/driverclasses" DriverCheck > "${WORK}/driver.log" 
 fi
 grep -q "DRIVER CHECK PASSED" "${WORK}/driver.log" || fail "the JDBC driver check did not pass"
 
+# --- build the protocol bot against the server jar --------------------------
+# It speaks the real Beta 1.7.3 protocol using the server's own packet
+# decoder, so it covers login, chunk streaming and disconnect end to end.
+mkdir -p "${WORK}/botclasses"
+javac -nowarn -source 8 -target 8 -cp "${JAR}" -d "${WORK}/botclasses" \
+    "${ROOT}/scripts/bot/BotClient.java" || fail "could not compile the protocol bot"
+
 # --- boot the server without a tty, exactly like a service manager would ----
 cd "${WORK}"
 cp "${JAR}" server.jar
@@ -110,6 +117,21 @@ if [ "${NETTY}" = "1" ]; then
         fail "the Netty listener did not accept a TCP connection"
     fi
 fi
+
+# --- log in over the real protocol, stream chunks, then disconnect ----------
+if ! java -cp "${JAR}:${WORK}/botclasses" BotClient 127.0.0.1 "${PORT}" SmokeBot 10 30000 \
+        > "${WORK}/bot.log" 2>&1; then
+    cat "${WORK}/bot.log"
+    fail "the protocol bot did not complete a session"
+fi
+grep -q "BOT PASSED" "${WORK}/bot.log" || { cat "${WORK}/bot.log"; fail "the protocol bot did not pass"; }
+
+# Give the server a moment to process the disconnect and log it.
+for ((i = 0; i < 30; i++)); do
+    grep -q "SmokeBot lost connection" server.log && break
+    sleep 1
+done
+grep -q "SmokeBot lost connection" server.log || fail "the server did not notice the bot disconnecting"
 
 echo "save-all" >&3
 wait_for "SMOKE WorldSaveEvent world=" 60

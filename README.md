@@ -32,7 +32,8 @@ Tagged builds are published as GitHub releases:
 * Every push to `master` also uploads the server jar as a workflow artifact
 
 CI builds every push and pull request, and runs an integration smoke test that
-boots the server, saves, and shuts down headlessly.
+boots the server, logs in a protocol-level client, streams chunks, saves, and
+shuts down headlessly.
 
 ## Differences from CraftBukkit
 
