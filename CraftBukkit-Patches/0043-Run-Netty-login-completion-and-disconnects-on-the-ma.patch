@@ -1,0 +1,123 @@
+From a449a59a32abf8e232908d18dd28b52fec3dd037 Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 01:18:01 +0500
+Subject: [PATCH] Run Netty login completion and disconnects on the main thread
+
+The Netty stack ran two pieces of world-mutating code on event loop
+threads:
+
+* NetworkManagerHandler.channelInactive/exceptionCaught went straight
+  into the disconnect path, which removes the player from the world, the
+  entity tracker and the chunk watchers and queues its chunks for
+  unloading.
+* NetLoginHandler.b finished the login inside the future returned by
+  getChunkAtAsync, that is, on an async chunk I/O thread, adding the
+  player to the world and starting its chunk send queue.
+
+Both touch main-thread-only state. In particular, the chunk unload queue
+is a plain fastutil Long2LongOpenHashMap that is iterated while chunks
+are unloaded: a concurrent put from an event loop thread corrupted the
+iterator and threw IndexOutOfBoundsException out of
+ChunkProviderServer.unloadChunks, which killed the server tick loop and
+made every following login time out.
+
+Post both continuations through MinecraftServer.queueTask, and skip the
+login completion if the client is already gone.
+
+diff --git a/src/main/java/com/canyonmodded/network/NetworkManagerHandler.java b/src/main/java/com/canyonmodded/network/NetworkManagerHandler.java
+index 25d4811be..50848d113 100644
+--- a/src/main/java/com/canyonmodded/network/NetworkManagerHandler.java
++++ b/src/main/java/com/canyonmodded/network/NetworkManagerHandler.java
+@@ -41,7 +41,11 @@ public class NetworkManagerHandler extends SimpleChannelInboundHandler<Packet> {
+ 
+     @Override
+     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+-        networkManager.a("disconnect.closed");
++        // Disconnecting removes the player from the world, the entity tracker and
++        // the chunk watchers, and queues chunks for unloading. All of that is
++        // main-thread state, so it must not run on the event loop: doing so
++        // corrupted the chunk unload queue and killed the tick loop.
++        this.server.queueTask(() -> this.networkManager.a("disconnect.closed"));
+     }
+ 
+     @Override
+@@ -51,10 +55,12 @@ public class NetworkManagerHandler extends SimpleChannelInboundHandler<Packet> {
+ 
+     @Override
+     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+-        if (cause instanceof ReadTimeoutException) {
+-            networkManager.a("disconnect.timeout");
+-        } else if (!(cause instanceof ClosedChannelException)) {
+-            networkManager.a(cause);
+-        }
++        this.server.queueTask(() -> {
++            if (cause instanceof ReadTimeoutException) {
++                this.networkManager.a("disconnect.timeout");
++            } else if (!(cause instanceof ClosedChannelException)) {
++                this.networkManager.a(cause);
++            }
++        });
+     }
+ }
+diff --git a/src/main/java/net/minecraft/server/NetLoginHandler.java b/src/main/java/net/minecraft/server/NetLoginHandler.java
+index bfb75d451..c405b57ee 100644
+--- a/src/main/java/net/minecraft/server/NetLoginHandler.java
++++ b/src/main/java/net/minecraft/server/NetLoginHandler.java
+@@ -113,18 +113,11 @@ public class NetLoginHandler extends NetHandler implements com.canyonmodded.netw
+             int playerChunkX = (int) Math.floor(entityplayer.locX) >> 4;
+             int playerChunkZ = (int) Math.floor(entityplayer.locZ) >> 4;
+             worldserver.chunkProviderServer.getChunkAtAsync(playerChunkX, playerChunkZ).thenRun(() -> {
+-            NetServerHandler netserverhandler = new NetServerHandler(this.server, this.networkManager, entityplayer);
+-
+-            netserverhandler.sendPacket(new Packet1Login("", entityplayer.id, worldserver.getSeed(), (byte) worldserver.worldProvider.dimension));
+-            netserverhandler.sendPacket(new Packet6SpawnPosition(chunkcoordinates.x, chunkcoordinates.y, chunkcoordinates.z));
+-            this.server.serverConfigurationManager.a(entityplayer, worldserver);
+-            // this.server.serverConfigurationManager.sendAll(new Packet3Chat("\u00A7e" + entityplayer.name + " joined the game."));  // CraftBukkit - message moved to join event
+-            this.server.serverConfigurationManager.c(entityplayer);
+-            netserverhandler.a(entityplayer.locX, entityplayer.locY, entityplayer.locZ, entityplayer.yaw, entityplayer.pitch);
+-            if (this.server.networkListenThread != null) this.server.networkListenThread.a(netserverhandler); // Canyon
+-            netserverhandler.sendPacket(new Packet4UpdateTime(entityplayer.getPlayerTime())); // CraftBukkit - add support for player specific time
+-            entityplayer.syncInventory();
+-            entityplayer.a(true); // Canyon - begin sending chunk packets immediately
++                // Canyon - the future completes on an async chunk I/O thread, but
++                // joining touches world state (entity tracker, chunk unload queue,
++                // player manager), which is main-thread only. Doing it here raced
++                // with the tick loop and corrupted the chunk unload queue.
++                this.server.queueTask(() -> this.completeLogin(entityplayer, worldserver, chunkcoordinates));
+             });
+             // Canyon End
+         }
+@@ -132,6 +125,30 @@ public class NetLoginHandler extends NetHandler implements com.canyonmodded.netw
+         this.c = true;
+     }
+ 
++    // Canyon start - finish the login on the main thread
++    private void completeLogin(EntityPlayer entityplayer, WorldServer worldserver, ChunkCoordinates chunkcoordinates) {
++        // The client may have gone away while the spawn chunk was loading.
++        io.netty.channel.Channel channel = this.getChannel();
++        if (channel != null ? !channel.isActive()
++                : this.networkManager.socket != null && this.networkManager.socket.isClosed()) {
++            return;
++        }
++
++        NetServerHandler netserverhandler = new NetServerHandler(this.server, this.networkManager, entityplayer);
++
++        netserverhandler.sendPacket(new Packet1Login("", entityplayer.id, worldserver.getSeed(), (byte) worldserver.worldProvider.dimension));
++        netserverhandler.sendPacket(new Packet6SpawnPosition(chunkcoordinates.x, chunkcoordinates.y, chunkcoordinates.z));
++        this.server.serverConfigurationManager.a(entityplayer, worldserver);
++        // this.server.serverConfigurationManager.sendAll(new Packet3Chat("\u00A7e" + entityplayer.name + " joined the game."));  // CraftBukkit - message moved to join event
++        this.server.serverConfigurationManager.c(entityplayer);
++        netserverhandler.a(entityplayer.locX, entityplayer.locY, entityplayer.locZ, entityplayer.yaw, entityplayer.pitch);
++        if (this.server.networkListenThread != null) this.server.networkListenThread.a(netserverhandler); // Canyon
++        netserverhandler.sendPacket(new Packet4UpdateTime(entityplayer.getPlayerTime())); // CraftBukkit - add support for player specific time
++        entityplayer.syncInventory();
++        entityplayer.a(true); // Canyon - begin sending chunk packets immediately
++    }
++    // Canyon end
++
+     public void a(String s, Object[] aobject) {
+         a.info(this.b() + " lost connection");
+         this.c = true;
+-- 
+2.47.3
+

@@ -4,7 +4,6 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -74,30 +73,42 @@ public final class BotClient {
         int keepAlives = 0;
         long loginNanos = 0L;
         long chunksNanos = 0L;
-        long chunksDoneNanos = 0L;
+        long idleDeadlineNanos = 0L;
         Set<Long> uniqueChunks = new HashSet<Long>();
+        String reason = "deadline";
 
         while (System.currentTimeMillis() < deadline) {
-            if (uniqueChunks.size() >= wantedChunks && keepAlives >= wantedKeepAlives) {
-                if (idleMillis <= 0L || System.nanoTime() - chunksDoneNanos >= idleMillis * 1000000L) {
+            boolean satisfied = uniqueChunks.size() >= wantedChunks && keepAlives >= wantedKeepAlives;
+            long waitMillis = deadline - System.currentTimeMillis();
+
+            if (satisfied) {
+                if (idleDeadlineNanos == 0L) {
+                    idleDeadlineNanos = System.nanoTime() + idleMillis * 1000000L;
+                }
+
+                long remainingNanos = idleDeadlineNanos - System.nanoTime();
+
+                if (idleMillis <= 0L || remainingNanos <= 0L) {
+                    reason = "idle";
                     break;
                 }
+
+                waitMillis = Math.min(waitMillis, remainingNanos / 1000000L + 1L);
             }
 
-            // Cap the read timeout so an idle wait wakes up to re-check the
-            // deadline even when the server has nothing left to send.
-            socket.setSoTimeout((int) Math.max(1L, Math.min(1000L, deadline - System.currentTimeMillis())));
+            // Packet.a maps both EOF and read timeouts to null, so the socket
+            // timeout has to be exactly the time we are still willing to wait.
+            // Anything shorter would end an idle wait (or a slow first flush)
+            // as if the connection had been closed.
+            socket.setSoTimeout((int) Math.max(1L, Math.min(waitMillis, Integer.MAX_VALUE)));
 
             // false = packets the server may send to a client; true would only
             // accept client-to-server packets and reject id 6/51.
-            Packet packet;
-            try {
-                packet = Packet.a(in, false, false);
-            } catch (SocketTimeoutException ignored) {
-                continue;
-            }
+            Packet packet = Packet.a(in, false, false);
 
             if (packet == null) {
+                // Packet.a returns null on EOF and on read timeout.
+                reason = "closed";
                 break;
             }
 
@@ -118,7 +129,6 @@ public final class BotClient {
                 ++chunks;
                 if (uniqueChunks.add(chunkKey(chunk.a, chunk.c)) && uniqueChunks.size() == wantedChunks) {
                     chunksNanos = System.nanoTime() - startNanos;
-                    chunksDoneNanos = System.nanoTime();
                 }
             } else if (packet instanceof Packet255KickDisconnect) {
                 System.out.println("BOT kicked reason=" + ((Packet255KickDisconnect) packet).a);
@@ -135,7 +145,7 @@ public final class BotClient {
         long totalNanos = System.nanoTime() - startNanos;
 
         System.out.println("BOT chunks=" + chunks + " unique_chunks=" + uniqueChunks.size()
-                + " keepalives=" + keepAlives + " spawn=" + gotSpawn);
+                + " keepalives=" + keepAlives + " spawn=" + gotSpawn + " reason=" + reason);
         System.out.println("BOT timing login_ms=" + millis(loginNanos)
                 + " chunks_ms=" + millis(chunksNanos)
                 + " total_ms=" + millis(totalNanos));
