@@ -1,0 +1,31 @@
+From 996d7c60927d5e5035e65880a09aca9c40968721 Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:52:22 +0500
+Subject: [PATCH] Update MySQL Connector/J to 9.3.0
+
+mysql-connector-java 5.1.14 is from 2012. Move to the current
+coordinates (com.mysql:mysql-connector-j) and version. The artifact still
+targets Java 8 and keeps the legacy com.mysql.jdbc.Driver shim, so
+existing bukkit.yml configurations keep working; new setups should use
+com.mysql.cj.jdbc.Driver.
+
+diff --git a/pom.xml b/pom.xml
+index 5eb100ed0..dea374eb1 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -82,9 +82,9 @@
+       <scope>compile</scope>
+     </dependency>
+     <dependency>
+-      <groupId>mysql</groupId>
+-      <artifactId>mysql-connector-java</artifactId>
+-      <version>5.1.14</version>
++      <groupId>com.mysql</groupId>
++      <artifactId>mysql-connector-j</artifactId>
++      <version>9.3.0</version>
+       <type>jar</type>
+       <scope>compile</scope>
+     </dependency>
+-- 
+2.47.3
+

@@ -1,0 +1,24 @@
+From a34bf82ea6ab57252aa9b7bad820c5516f521488 Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:40:49 +0500
+Subject: [PATCH] Update jopt-simple to 5.0.4
+
+3.2 is from 2010. The option parsing API used by Main, PropertyManager
+and the log formatter is unchanged in 5.0.4, so this is a drop-in bump.
+
+diff --git a/pom.xml b/pom.xml
+index c37ec7fef..6cb465bc4 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -55,7 +55,7 @@
+     <dependency>
+       <groupId>net.sf.jopt-simple</groupId>
+       <artifactId>jopt-simple</artifactId>
+-      <version>3.2</version>
++      <version>5.0.4</version>
+       <type>jar</type>
+       <scope>compile</scope>
+     </dependency>
+-- 
+2.47.3
+
