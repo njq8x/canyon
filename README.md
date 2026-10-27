@@ -43,12 +43,15 @@ shut it down afterwards, so they never touch an existing world. Pass the server
 and API jars built by Maven:
 
 ```bash
-./scripts/smoke-test.sh Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
-./scripts/soak.sh       Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
-./scripts/benchmark.sh  Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
+./scripts/smoke-test.sh     Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
+./scripts/soak.sh           Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
+./scripts/chunkfail-test.sh Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
+./scripts/benchmark.sh      Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
 ```
 
 * `smoke-test.sh` — one login, chunk download, save and clean shutdown.
+* `chunkfail-test.sh` — a world generator that throws for one chunk must not
+  hang the chunk-load future or poison the load queue for later requests.
 * `soak.sh` — repeated parallel logins with idling and clean disconnects; fails
   on leaked sockets or threads, timed out connections, errors in the log, or a
   server that stops answering. Set `SOAK_NETTY=1` to exercise the Netty stack,

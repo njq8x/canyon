@@ -54,6 +54,9 @@ jobs:
           SMOKE_PORT: '25599'
         run: ./scripts/smoke-test.sh Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
 
+      - name: Chunk load failure test
+        run: ./scripts/chunkfail-test.sh Canyon-Server/target/canyon-server.jar Canyon-API/target/canyon-api.jar
+
       - name: Soak test (legacy networking)
         env:
           SOAK_IDLE_MS: '500'

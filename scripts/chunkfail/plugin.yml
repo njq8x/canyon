@@ -1,0 +1,4 @@
+name: chunkfailtest
+main: chunkfailtest.ChunkFailPlugin
+version: 1.0
+load: STARTUP
