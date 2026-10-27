@@ -1,0 +1,95 @@
+From 35264bc426535d977b736439a334531f693bfcea Mon Sep 17 00:00:00 2001
+From: njq8 <318205820+njq8x@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 12:03:31 +0500
+Subject: [PATCH] Do not lose chunk state when a chunk load or send fails
+
+A chunk load could fail after the I/O thread had handed the chunk back to
+the main thread: postLoadTask runs world generation and chunk-load logic
+that can throw (a custom chunk generator, a damaged region file). The
+exception escaped from the queued task, so result was never completed:
+
+  - every getChunkAtAsync() waiter hung forever (a player would never
+    finish logging in or respawning),
+  - the dead task stayed in loadQueue, so later requests for the same
+    chunk got the same never-completing future.
+
+Complete the future exceptionally, drop the task from loadQueue and keep
+the SEVERE log by rethrowing.
+
+EntityPlayer.sendQueuedChunks() had a similar problem: it took a permit
+from chunkSendSemaphore before starting the send and released it only on
+the happy path. A failed load or a failed packet send leaked the permit
+permanently, and after maxOutstandingChunks failures (2 by default) the
+player silently stopped receiving chunks. Use whenComplete() plus a
+finally block so the permit is always returned.
+
+diff --git a/src/main/java/net/minecraft/server/ChunkProviderServer.java b/src/main/java/net/minecraft/server/ChunkProviderServer.java
+index a343744b0..dd5e7084f 100644
+--- a/src/main/java/net/minecraft/server/ChunkProviderServer.java
++++ b/src/main/java/net/minecraft/server/ChunkProviderServer.java
+@@ -374,7 +374,26 @@ public class ChunkProviderServer implements IChunkProvider {
+         public void run() {
+             Chunk loaded = realLoadChunk(x, z);
+             immediate.complete(loaded);
+-            world.server.queueTask(() -> result.complete(ChunkProviderServer.this.postLoadTask(loaded, x, z)));
++            world.server.queueTask(() -> {
++                try {
++                    result.complete(ChunkProviderServer.this.postLoadTask(loaded, x, z));
++                } catch (Throwable throwable) {
++                    // Canyon - postLoadTask can throw (a chunk generator, a
++                    // broken chunk on disk, ...). Leaving the future
++                    // uncompleted used to hang every waiter forever and kept
++                    // the dead task in loadQueue, so drop the task and report
++                    // the failure instead.
++                    ChunkProviderServer.this.loadQueue.remove(x, z);
++                    result.completeExceptionally(throwable);
++                    if (throwable instanceof RuntimeException) {
++                        throw (RuntimeException) throwable;
++                    }
++                    if (throwable instanceof Error) {
++                        throw (Error) throwable;
++                    }
++                    throw new RuntimeException(throwable);
++                }
++            });
+         }
+ 
+         @Override
+diff --git a/src/main/java/net/minecraft/server/EntityPlayer.java b/src/main/java/net/minecraft/server/EntityPlayer.java
+index e32c530f4..b86862db4 100644
+--- a/src/main/java/net/minecraft/server/EntityPlayer.java
++++ b/src/main/java/net/minecraft/server/EntityPlayer.java
+@@ -290,14 +290,23 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+                     break;
+                 }
+                 final ChunkCoordIntPair chunkcoordintpair = loopingChunkcoordintpair;
+-                worldserver.chunkProviderServer.getChunkAtAsync(chunkcoordintpair.x, chunkcoordintpair.z).thenRun(() -> {
+-                    this.netServerHandler.sendPacket(new Packet51MapChunk(chunkcoordintpair.x * 16, 0, chunkcoordintpair.z * 16, 16, 128, 16, worldserver));
+-                    List list = worldserver.getTileEntities(chunkcoordintpair.x * 16, 0, chunkcoordintpair.z * 16, chunkcoordintpair.x * 16 + 16, 128, chunkcoordintpair.z * 16 + 16);
+-
+-                    for (int j = 0; j < list.size(); ++j) {
+-                        this.a((TileEntity) list.get(j));
++                worldserver.chunkProviderServer.getChunkAtAsync(chunkcoordintpair.x, chunkcoordintpair.z).whenComplete((chunk, failure) -> {
++                    try {
++                        // Canyon - the load can fail (for example when the
++                        // chunk generator throws). There is nothing to send
++                        // then, but the permit below must be returned either
++                        // way, or the player would never receive chunks again.
++                        if (failure == null) {
++                            this.netServerHandler.sendPacket(new Packet51MapChunk(chunkcoordintpair.x * 16, 0, chunkcoordintpair.z * 16, 16, 128, 16, worldserver));
++                            List list = worldserver.getTileEntities(chunkcoordintpair.x * 16, 0, chunkcoordintpair.z * 16, chunkcoordintpair.x * 16 + 16, 128, chunkcoordintpair.z * 16 + 16);
++
++                            for (int j = 0; j < list.size(); ++j) {
++                                this.a((TileEntity) list.get(j));
++                            }
++                        }
++                    } finally {
++                        chunkSendSemaphore.release();
+                     }
+-                    chunkSendSemaphore.release();
+                 });
+ 
+                 // Old networking stack can only do one chunk packet at a time
+-- 
+2.47.3
+
